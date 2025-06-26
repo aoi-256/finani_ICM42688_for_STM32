@@ -1,49 +1,23 @@
 #include "ICM42688.h"
 #include "registers.h"
+#include <math.h>
+#include <cstring>
+
+#define PI 3.14159
 
 using namespace ICM42688reg;
 
-/* ICM42688 object, input the I2C bus and address */
-ICM42688::ICM42688(TwoWire& bus, uint8_t address) {
-	_i2c     = &bus;     // I2C bus
-	_address = address;  // I2C address
-	_useSPI  = false;    // set to use I2C
-}
+ICM42688::ICM42688(SPI_HandleTypeDef* spi_pin, GPIO_TypeDef* gpio_type, uint32_t gpio_pin){
 
-/* ICM42688 object, input the I2C bus and address using SDA, SCL pins */
-ICM42688::ICM42688(TwoWire& bus, uint8_t address, uint8_t sda_pin, uint8_t scl_pin) {
-	_i2c     = &bus;     // I2C bus
-	_address = address;  // I2C address
-	_useSPI  = false;    // set to use I2C
-	_sda_pin = sda_pin;  // set SDA to user defined pin
-	_scl_pin = scl_pin;  // set SCL to user defined pin
-}
-
-/* ICM42688 object, input the SPI bus and chip select pin */
-ICM42688::ICM42688(SPIClass& bus, uint8_t csPin, uint32_t spi_hs_clock) {
-	_spi          = &bus;   // SPI bus
-	_csPin        = csPin;  // chip select pin
-	_useSPI       = true;   // set to use SPI
-	_spi_hs_clock = spi_hs_clock;
+	this->spi_pin = spi_pin;
+	this->gpio_type = gpio_type;
+	this->gpio_pin = gpio_pin;
+	_useSPI = true;
 }
 
 /* starts communication with the ICM42688 */
 int ICM42688::begin() {
-	if (_useSPI) {  // using SPI for communication
-		// use low speed SPI for register setting
-		_useSPIHS = false;
-		// setting CS pin to output
-		pinMode(_csPin, OUTPUT);
-		// setting CS pin high
-		digitalWrite(_csPin, HIGH);
-		// begin SPI communication
-		_spi->begin();
-	} else {  // using I2C for communication
-		// starting the I2C bus
-		_i2c->begin(_sda_pin, _scl_pin);
-		// setting the I2C clock
-		_i2c->setClock(I2C_CLK);
-	}
+
 
 	// reset the ICM42688
 	reset();
@@ -464,7 +438,7 @@ int ICM42688::calibrateGyro() {
 		_gyroBD[0] += (gyrX() + _gyrB[0]) / NUM_CALIB_SAMPLES;
 		_gyroBD[1] += (gyrY() + _gyrB[1]) / NUM_CALIB_SAMPLES;
 		_gyroBD[2] += (gyrZ() + _gyrB[2]) / NUM_CALIB_SAMPLES;
-		delay(1);
+		HAL_Delay(1);
 	}
 	_gyrB[0] = _gyroBD[0];
 	_gyrB[1] = _gyroBD[1];
@@ -526,7 +500,7 @@ int ICM42688::calibrateAccel() {
 		_accBD[0] += (accX() / _accS[0] + _accB[0]) / NUM_CALIB_SAMPLES;
 		_accBD[1] += (accY() / _accS[1] + _accB[1]) / NUM_CALIB_SAMPLES;
 		_accBD[2] += (accZ() / _accS[2] + _accB[2]) / NUM_CALIB_SAMPLES;
-		delay(1);
+		HAL_Delay(1);
 	}
 	if (_accBD[0] > 0.9f) {
 		_accMax[0] = _accBD[0];
@@ -618,64 +592,42 @@ void ICM42688::setAccelCalZ(float bias, float scaleFactor) {
 
 /* writes a byte to ICM42688 register given a register address and data */
 int ICM42688::writeRegister(uint8_t subAddress, uint8_t data) {
-	/* write data to device */
-	if (_useSPI) {
-		_spi->beginTransaction(SPISettings(SPI_LS_CLOCK, MSBFIRST, SPI_MODE3));  // begin the transaction
-		digitalWrite(_csPin, LOW);                                               // select the ICM42688 chip
-		_spi->transfer(subAddress);                                              // write the register address
-		_spi->transfer(data);                                                    // write the data
-		digitalWrite(_csPin, HIGH);                                              // deselect the ICM42688 chip
-		_spi->endTransaction();                                                  // end the transaction
-	} else {
-		_i2c->beginTransmission(_address);                                       // open the device
-		_i2c->write(subAddress);                                                 // write the register address
-		_i2c->write(data);                                                       // write the data
-		_i2c->endTransmission();
-	}
 
-	delay(10);
+    uint8_t tx_tmp[2] = {};
 
-	/* read back the register */
-	readRegisters(subAddress, 1, _buffer);
-	/* check the read back register against the written register */
-	if (_buffer[0] == data) {
-		return 1;
-	} else {
-		return -1;
-	}
+    tx_tmp[0] = (uint8_t)subAddress | 0x00;
+    tx_tmp[1] = data;
+
+    HAL_GPIO_WritePin(gpio_type, gpio_pin, GPIO_PIN_RESET);
+
+	HAL_SPI_Transmit(spi_pin, tx_tmp, 2, 10);
+
+	HAL_GPIO_WritePin(gpio_type, gpio_pin, GPIO_PIN_SET);
+
+	return 1;
 }
 
 /* reads registers from ICM42688 given a starting register address, number of bytes, and a pointer to store data */
 int ICM42688::readRegisters(uint8_t subAddress, uint8_t count, uint8_t* dest) {
-	if (_useSPI) {
-		// begin the transaction
-		if (_useSPIHS) {
-			_spi->beginTransaction(SPISettings(_spi_hs_clock, MSBFIRST, SPI_MODE3));
-		} else {
-			_spi->beginTransaction(SPISettings(SPI_LS_CLOCK, MSBFIRST, SPI_MODE3));
-		}
-		digitalWrite(_csPin, LOW);                       // select the ICM42688 chip
-		_spi->transfer(subAddress | 0x80);               // specify the starting register address
-		for (uint8_t i = 0; i < count; i++) {
-			dest[i] = _spi->transfer(0x00);                // read the data
-		}
-		digitalWrite(_csPin, HIGH);                      // deselect the ICM42688 chip
-		_spi->endTransaction();                          // end the transaction
-		return 1;
-	} else {
-		_i2c->beginTransmission(_address);               // open the device
-		_i2c->write(subAddress);                         // specify the starting register address
-		_i2c->endTransmission(false);
-		_numBytes = _i2c->requestFrom(_address, count);  // specify the number of bytes to receive
-		if (_numBytes == count) {
-			for (uint8_t i = 0; i < count; i++) {
-				dest[i] = _i2c->read();
-			}
-			return 1;
-		} else {
-			return -1;
-		}
-	}
+
+    uint8_t rx_tmp[2] = {};
+    uint8_t tx_tmp[2] = {};
+
+    for(uint8_t i = 0; i < count; i++){
+
+        tx_tmp[0] = (uint8_t(subAddress) + i) | 0x80;
+        tx_tmp[1] = 0x00;
+
+        HAL_GPIO_WritePin(gpio_type, gpio_pin, GPIO_PIN_RESET);
+
+        HAL_SPI_TransmitReceive(spi_pin, tx_tmp, rx_tmp, 2, 10);
+
+        HAL_GPIO_WritePin(gpio_type, gpio_pin, GPIO_PIN_SET);
+
+        dest[i] = rx_tmp[1];
+    }
+
+    return 1;
 }
 
 int ICM42688::setBank(uint8_t bank) {
@@ -695,7 +647,8 @@ void ICM42688::reset() {
 	writeRegister(UB0_REG_DEVICE_CONFIG, 0x01);
 
 	// wait for ICM42688 to come back up
-	delay(1);
+	HAL_Delay(1);
+
 }
 
 /* gets the ICM42688 WHO_AM_I register value */
@@ -765,7 +718,7 @@ int ICM42688::computeOffsets() {
 		_rawGyrBias[0] += _rawGyr[0];
 		_rawGyrBias[1] += _rawGyr[1];
 		_rawGyrBias[2] += _rawGyr[2];
-		delay(1);
+		HAL_Delay(1);
 	}
 
 	// Average
