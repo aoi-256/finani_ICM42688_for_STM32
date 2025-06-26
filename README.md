@@ -1,3 +1,8 @@
+# STM32に対応させたバージョン
+
+- コンストラクタとRead/Write関数を中心にSTM32に対応させました
+- 仮想関数の導入などをすることで、従来の機能を保ったままSTM32にも対応できそう
+
 # ICM42688
 
 Arduino library for communicating with the [ICM42688](https://invensense.tdk.com/products/motion-tracking/6-axis/icm-42688-p/) six-axis Inertial Measurement Units (IMU).
