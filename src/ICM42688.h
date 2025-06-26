@@ -1,9 +1,8 @@
 #ifndef ICM42688_H
 #define ICM42688_H
 
-#include "Arduino.h"
-#include "SPI.h"   // SPI library
-#include "Wire.h"  // I2C library
+#include "spi.h"
+#include "gpio.h"
 
 class ICM42688 {
  public:
@@ -60,31 +59,7 @@ class ICM42688 {
 		third_order  = 0x02,
 	};
 
-	/**
-     * @brief      Constructor for I2C communication
-     *
-     * @param      bus      I2C bus
-     * @param[in]  address  Address of ICM 42688-p device
-     */
-	ICM42688(TwoWire& bus, uint8_t address);
-
-	/**
-     * @brief      Constructor for I2C communication using SDA, SCL pins
-     *
-     * @param      bus      I2C bus
-     * @param[in]  address  Address of ICM 42688-p device
-     * @param[in]  sda_pin  GPIO pin to use for I2C SDA signal
-     * @param[in]  scl_pin  GPIO pin to use for I2C SCL signal
-     */
-	ICM42688(TwoWire& bus, uint8_t address, uint8_t sda_pin, uint8_t scl_pin);
-
-	/**
-     * @brief      Constructor for SPI communication
-     *
-     * @param      bus    SPI bus
-     * @param[in]  csPin  Chip Select pin
-     */
-	ICM42688(SPIClass& bus, uint8_t csPin, uint32_t spi_hs_clock = 8'000'000);
+	ICM42688(SPI_HandleTypeDef* spi_pin, GPIO_TypeDef* gpio_type, uint32_t gpio_pin);
 
 	/**
      * @brief      Initialize the device.
@@ -268,21 +243,16 @@ class ICM42688 {
 	void  setAccelCalZ(float bias, float scaleFactor);
 
  protected:
-	///\brief I2C Communication
-	uint8_t                   _address  = 0;
-	TwoWire*                  _i2c      = {};
-	static constexpr uint32_t I2C_CLK   = 400'000;  // 400 kHz
-	size_t                    _numBytes = 0;        // number of bytes received from I2C
 
-	///\brief SPI Communication
-	SPIClass*                 _spi          = {};
-	uint8_t                   _sda_pin      = 18;
-	uint8_t                   _scl_pin      = 19;
-	uint8_t                   _csPin        = 0;
-	bool                      _useSPI       = false;
-	bool                      _useSPIHS     = false;
-	static constexpr uint32_t SPI_LS_CLOCK  = 1'000'000;  // 1 MHz
-	uint32_t                  _spi_hs_clock = 8'000'000;  // 8 MHz
+	SPI_HandleTypeDef* spi_pin;
+	GPIO_TypeDef* gpio_type;
+	uint32_t gpio_pin;
+
+	bool _useSPI   = false;
+	bool _useSPIHS = false;
+
+	uint8_t                   _address  = 0;
+	size_t                    _numBytes = 0;        // number of bytes received from I2C
 
 	// buffer for reading from sensor
 	uint8_t _buffer[15] = {};
